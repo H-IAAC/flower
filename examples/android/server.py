@@ -32,7 +32,5 @@ def fit_config(rnd: int):
         "local_epochs": 5,
     }
     return config
-
-
 if __name__ == "__main__":
     main()
