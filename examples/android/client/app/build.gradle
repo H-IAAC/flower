@@ -86,12 +86,12 @@ dependencies {
 
 }
 
-def modelUrl = 'https://www.dropbox.com/s/tubgpepk2q6xiny/models.zip?dl=1'
+def modelUrl = 'https://www.dropbox.com/s/1ngqaz1pny8v6wp/HAR_model.zip?dl=1'
 def modelArchivePath = "${buildDir}/model.zip"
 def modelTargetLocation = 'src/main/assets/model'
 
 
-def dataUrl = 'https://www.dropbox.com/s/coeixr4kh8ljw6o/cifar10.zip?dl=1'
+def dataUrl = 'https://www.dropbox.com/s/jyras6cvtdoefpn/dataset.zip?dl=1'
 def dataArchivePath = "${buildDir}/data.zip"
 def dataTargetLocation = 'src/main/assets/data'
 
