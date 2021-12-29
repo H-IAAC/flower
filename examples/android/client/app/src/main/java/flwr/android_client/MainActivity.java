@@ -69,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         trainButton = (Button) findViewById(R.id.trainFederated);
 
         fc = new FlowerClient(this);
+        
     }
 
     public static void hideKeyboard(Activity activity) {
