@@ -82,7 +82,7 @@ dependencies {
     implementation 'io.grpc:grpc-protobuf-lite:1.27.2' // CURRENT_GRPC_VERSION
     implementation 'io.grpc:grpc-stub:1.27.2' // CURRENT_GRPC_VERSION
     implementation 'javax.annotation:javax.annotation-api:1.2'
-
+    implementation 'com.opencsv:opencsv:4.6'
     def lifecycle_version = '2.1.0-rc01'
     implementation "androidx.lifecycle:lifecycle-extensions:$lifecycle_version"
     implementation "androidx.lifecycle:lifecycle-common-java8:$lifecycle_version"
