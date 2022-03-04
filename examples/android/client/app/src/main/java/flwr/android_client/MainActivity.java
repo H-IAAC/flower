@@ -22,7 +22,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import flwr.android_client.ml.Harmodel;
+//import flwr.android_client.ml.Harmodel;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -30,8 +30,8 @@ import  flwr.android_client.FlowerServiceGrpc.FlowerServiceBlockingStub;
 import  flwr.android_client.FlowerServiceGrpc.FlowerServiceStub;
 import com.google.protobuf.ByteString;
 
-import org.tensorflow.lite.DataType;
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+/*import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;*/
 
 import io.grpc.stub.StreamObserver;
 
@@ -73,8 +73,8 @@ public class MainActivity extends AppCompatActivity {
         trainButton = (Button) findViewById(R.id.trainFederated);
 
         fc = new FlowerClient(this);
-        HarModelWrapper har = new HarModelWrapper(this);
-        har.loadData();
+/*        HarModelWrapper har = new HarModelWrapper(this);
+        har.loadData();*/
     }
 
     public static void hideKeyboard(Activity activity) {

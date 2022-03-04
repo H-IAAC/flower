@@ -5,17 +5,17 @@ import android.util.Log;
 
 
 import org.tensorflow.lite.DataType;
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+//import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 
-import flwr.android_client.ml.Harmodel;
+//import flwr.android_client.ml.Harmodel;
 
 public class HarModelWrapper {
-
+/*
     private Harmodel model;
     private static final String TAG = "HarModel";
     private final Context context;
@@ -102,4 +102,5 @@ public class HarModelWrapper {
 
         return buffer.array();
     }
+*/
 }

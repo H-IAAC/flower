@@ -64,7 +64,7 @@ public class FlowerClient {
 
     public void loadData(int device_id) {
         try {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("data/partition_" + (device_id - 1) + "_train.txt")));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("cifar10/data/partition_" + (device_id - 1) + "_train.txt")));
             String line;
             int i = 0;
             while ((line = reader.readLine()) != null) {
@@ -75,7 +75,7 @@ public class FlowerClient {
             reader.close();
 
             i = 0;
-            reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("data/partition_" +  (device_id - 1)  + "_test.txt")));
+            reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("cifar10/data/partition_" +  (device_id - 1)  + "_test.txt")));
             while ((line = reader.readLine()) != null) {
                 i++;
                 Log.e(TAG, i + "th test image loaded");
