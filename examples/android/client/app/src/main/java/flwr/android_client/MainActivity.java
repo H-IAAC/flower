@@ -90,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
     public void setResultText(String text) {
         SimpleDateFormat dateFormat = new SimpleDateFormat("HH:mm:ss");
         String time = dateFormat.format(new Date());
-        resultText.append("\n" + time + "   " + text);
+        runOnUiThread(() -> resultText.append("\n" + time + "   " + text));
     }
 
     public void loadData(View view){

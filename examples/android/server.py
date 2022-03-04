@@ -9,9 +9,9 @@ def main() -> None:
     strategy = fl.server.strategy.FedAvgAndroid(
         fraction_fit=1.0,
         fraction_eval=1.0,
-        min_fit_clients=4,
-        min_eval_clients=4,
-        min_available_clients=4,
+        min_fit_clients=1,
+        min_eval_clients=1,
+        min_available_clients=1,
         eval_fn=None,
         on_fit_config_fn=fit_config,
         initial_parameters=None,
