@@ -3,7 +3,6 @@ package flwr.android_client;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.os.ConditionVariable;
 import android.util.Log;
 import android.util.Pair;
@@ -14,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 
 public class FlowerClient {
@@ -25,6 +25,9 @@ public class FlowerClient {
     private final ConditionVariable isTraining = new ConditionVariable();
     private static String TAG = "Flower";
     private int local_epochs = 1;
+
+    private String[] csvTitles;
+    private String[][] csvData;
 
     public FlowerClient(Context context) {
         this.tlModel = new TransferLearningModelWrapper(context);
@@ -64,6 +67,18 @@ public class FlowerClient {
 
     public void loadData(int device_id) {
         try {
+            /////////
+            BufferedReader reader2 = new BufferedReader(new InputStreamReader(this.context.getAssets().open("csv_files/Phones_accelerometer.csv")));
+            String nextLine;
+            csvTitles = reader2.readLine().split(",");
+            ArrayList<String[]> csvDataList = new ArrayList<>();
+            int count = 0;
+            while ((nextLine = reader2.readLine()) != null && count <= 10000) {
+                csvDataList.add(nextLine.split(","));
+                count++;
+            }
+            csvData = csvDataList.toArray(new String[0][]);
+            /////////
             BufferedReader reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("data/partition_" + (device_id - 1) + "_train.txt")));
             String line;
             int i = 0;
