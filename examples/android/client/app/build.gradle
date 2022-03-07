@@ -122,4 +122,4 @@ task downloadModelAndData(type: DefaultTask) {
     }
 }
 
-preBuild.dependsOn downloadModelAndData
+// preBuild.dependsOn downloadModelAndData
