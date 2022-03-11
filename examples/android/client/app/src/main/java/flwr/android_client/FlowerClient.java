@@ -9,11 +9,14 @@ import android.util.Pair;
 
 import androidx.lifecycle.MutableLiveData;
 
+import org.apache.commons.lang3.ObjectUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public class FlowerClient {
@@ -26,8 +29,16 @@ public class FlowerClient {
     private static String TAG = "Flower";
     private int local_epochs = 1;
 
-    private String[] csvTitles;
-    private String[][] csvData;
+    private String trainInputFile = "data/X_train.csv";
+    private String testInputFile = "data/X_test.csv";
+    private String trainLabelFile = "data/label_train.csv";
+    private String testLabelFile = "data/label_test.csv";
+
+    public static final int WINDOW_SIZE = 400;
+    public static final int N_SAMPLES_TRAIN = 1000;
+    public static final int N_SAMPLES_TEST = 1000;
+    public static final int WINDOWED_N_SAMPLES_TRAIN = WINDOW_SIZE * N_SAMPLES_TRAIN;
+    public static final int WINDOWED_N_SAMPLES_TEST = WINDOW_SIZE * N_SAMPLES_TEST;
 
     public FlowerClient(Context context) {
         this.tlModel = new TransferLearningModelWrapper(context);
@@ -65,91 +76,77 @@ public class FlowerClient {
         }
     }
 
+    private float[] toFloatArray(List<Float> list)
+    {
+        int i = 0;
+        float[] array = new float[list.size()];
+
+        for (Float f : list) {
+            array[i++] = (f != null ? f : Float.NaN);
+        }
+        return array;
+    }
+
+    private void csvReadInput(String csvInputFilePath, String csvLabelFilePath, int n_samples, int win_sz, Boolean isTrain) throws IOException {
+        BufferedReader readerInput = new BufferedReader(new InputStreamReader(this.context.getAssets().open(csvInputFilePath)));
+        BufferedReader readerLabel = new BufferedReader(new InputStreamReader(this.context.getAssets().open(csvLabelFilePath)));
+
+        String nextLine;
+        // read the first line (column labels)
+        String[] csvTitles = readerInput.readLine().split(",");
+
+        ArrayList<Float> csvDataList = new ArrayList<>();
+
+        int count = 0;
+        float[] val = null;
+
+        while ((nextLine = readerInput.readLine()) != null && count <= n_samples) {
+
+            String[] curr_line = nextLine.split(",");
+
+            if (val == null) {
+                int lin_sz = curr_line.length;
+                val = new float[lin_sz*n_samples];
+            }
+
+            for (String word: curr_line) {
+                val[count] = Float.parseFloat(word);
+            }
+
+            /*
+             * read the label for each window
+             */
+            if (0 == (count % win_sz)) {
+                Log.e(TAG,  (count/win_sz)+ "th test window loaded");
+                addSample(val, readerLabel.readLine(), isTrain);
+            }
+
+            count++;
+        }
+
+        readerInput.close();
+        readerLabel.close();
+    }
+
     public void loadData(int device_id) {
         try {
-            /////////
-            BufferedReader reader2 = new BufferedReader(new InputStreamReader(this.context.getAssets().open("csv_files/Phones_accelerometer.csv")));
-            String nextLine;
-            csvTitles = reader2.readLine().split(",");
-            ArrayList<String[]> csvDataList = new ArrayList<>();
-            int count = 0;
-            while ((nextLine = reader2.readLine()) != null && count <= 10000) {
-                csvDataList.add(nextLine.split(","));
-                count++;
-            }
-            csvData = csvDataList.toArray(new String[0][]);
-            /////////
-            BufferedReader reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("data/partition_" + (device_id - 1) + "_train.txt")));
-            String line;
-            int i = 0;
-            while ((line = reader.readLine()) != null) {
-                i++;
-                Log.e(TAG, i + "th training image loaded");
-                addSample("data/" + line, true);
-            }
-            reader.close();
-
-            i = 0;
-            reader = new BufferedReader(new InputStreamReader(this.context.getAssets().open("data/partition_" +  (device_id - 1)  + "_test.txt")));
-            while ((line = reader.readLine()) != null) {
-                i++;
-                Log.e(TAG, i + "th test image loaded");
-                addSample("data/" + line, false);
-            }
-            reader.close();
-
+            // load train data
+            csvReadInput(trainInputFile, trainLabelFile, WINDOWED_N_SAMPLES_TRAIN, WINDOW_SIZE, true);
+            // load test data
+            csvReadInput(testInputFile, testLabelFile, WINDOWED_N_SAMPLES_TRAIN, WINDOW_SIZE, false);
         } catch (IOException ex) {
             ex.printStackTrace();
         }
     }
 
-    private void addSample(String photoPath, Boolean isTraining) throws IOException {
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap bitmap =  BitmapFactory.decodeStream(this.context.getAssets().open(photoPath), null, options);
-        String sampleClass = get_class(photoPath);
-
-        // get rgb equivalent and class
-        float[] rgbImage = prepareImage(bitmap);
-
+    private void addSample(float[] window, String sampleClass, Boolean isTraining) throws IOException {
         // add to the list.
         try {
-            this.tlModel.addSample(rgbImage, sampleClass, isTraining).get();
+            this.tlModel.addSample(window, sampleClass, isTraining).get();
         } catch (ExecutionException e) {
             throw new RuntimeException("Failed to add sample to model", e.getCause());
         } catch (InterruptedException e) {
             // no-op
         }
-    }
-
-    public String get_class(String path) {
-        String label = path.split("/")[2];
-        return label;
-    }
-
-    /**
-     * Normalizes a camera image to [0; 1], cropping it
-     * to size expected by the model and adjusting for camera rotation.
-     */
-    private static float[] prepareImage(Bitmap bitmap)  {
-        int modelImageSize = TransferLearningModelWrapper.IMAGE_SIZE;
-
-        float[] normalizedRgb = new float[modelImageSize * modelImageSize * 3];
-        int nextIdx = 0;
-        for (int y = 0; y < modelImageSize; y++) {
-            for (int x = 0; x < modelImageSize; x++) {
-                int rgb = bitmap.getPixel(x, y);
-
-                float r = ((rgb >> 16) & LOWER_BYTE_MASK) * (1 / 255.0f);
-                float g = ((rgb >> 8) & LOWER_BYTE_MASK) * (1 / 255.0f);
-                float b = (rgb & LOWER_BYTE_MASK) * (1 / 255.0f);
-
-                normalizedRgb[nextIdx++] = r;
-                normalizedRgb[nextIdx++] = g;
-                normalizedRgb[nextIdx++] = b;
-            }
-        }
-
-        return normalizedRgb;
     }
 }
