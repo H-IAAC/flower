@@ -2,7 +2,6 @@ import argparse
 import os
 
 from numpy import genfromtxt
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 
@@ -16,7 +15,7 @@ class HeadModel:
     def __init__(self, features, ACT_LABELS) -> None:
         self.n_features = len(features)
         self.n_labels = len(ACT_LABELS)
-        self.base_model = self.build_base_model()
+        self.base_model = self.baseline_model()
 
     def get_base_model(self) -> Sequential:
         return self.base_model
@@ -28,6 +27,15 @@ class HeadModel:
         model.add(Dense(self.n_labels, activation='softmax'))  # Softmax for multi-class classification
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
+        return model
+
+    def baseline_model(self) -> Sequential:
+        model = Sequential()
+        model.add(Dense(units=64, kernel_initializer='uniform', activation='relu', input_dim=self.n_features))
+        model.add(Dense(units=128, kernel_initializer='uniform', activation='relu'))
+        model.add(Dense(units=64, kernel_initializer='uniform', activation='relu'))
+        model.add(Dense(units=self.n_labels, kernel_initializer='uniform', activation='softmax'))
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
         return model
 
 
@@ -43,7 +51,7 @@ class ModelClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.model.set_weights(parameters)
-        self.model.fit(self.x_train, self.y_train, epochs=1, batch_size=32)
+        self.model.fit(self.x_train, self.y_train, epochs=1, batch_size=200)
         return self.model.get_weights(), len(self.x_train), {}
 
     def evaluate(self, parameters, config):
@@ -54,12 +62,13 @@ class ModelClient(fl.client.NumPyClient):
 
 def main() -> None:
     # Parse command line argument `partition`
-    parser = argparse.ArgumentParser(description="Flower")
-    parser.add_argument("--partition", type=int, choices=range(0, 10), required=True)
-    args = parser.parse_args()
+#    parser = argparse.ArgumentParser(description="Flower")
+#    parser.add_argument("--partition", type=int, choices=range(0, 10), required=True)
+#    args = parser.parse_args()
 
-    features = ['userAcceleration.x', 'userAcceleration.y', 'userAcceleration.z', 'rotationRate.x', 'rotationRate.y',
-                'rotationRate.z', 'attitude.roll', 'attitude.pitch', 'attitude.yaw']
+    features = ['attitude.roll', 'attitude.pitch', 'attitude.yaw', 'userAcceleration.x', 'userAcceleration.y',
+                'userAcceleration.z', 'gravity.x', 'gravity.y', 'gravity.z', 'rotationRate.x', 'rotationRate.y',
+                'rotationRate.z']
 
     ACT_LABELS = ["dws", "ups", "wlk", "jog", "std", "sit"]
 
@@ -67,7 +76,8 @@ def main() -> None:
     model = model_obj.get_base_model()
 
     # Load local data partition
-    (x_train, y_train), (x_test, y_test) = load_partition(args.partition)
+#    (x_train, y_train), (x_test, y_test) = load_partition(args.partition)
+    (x_train, y_train), (x_test, y_test) = load_partition(0)
 
     # Start Flower client
     client = ModelClient(model, x_train, y_train, x_test, y_test)
@@ -75,28 +85,28 @@ def main() -> None:
 
 
 def load_partition(idx: int):
-    x_train = genfromtxt('./X_train.csv', delimiter=',')
-    # filtrando a primeira coluna e a primeira linha (labels das colunas)
-    x_train = x_train[1:,1:]
+    x_train = genfromtxt('./data/MotionSense_x_train.csv', delimiter=',')
+    # filtrando a primeira linha (labels das colunas)
+    x_train = x_train[1:, :]
 
-    x_test = genfromtxt('./X_test.csv', delimiter=',')
-    # filtrando a primeira coluna e a primeira linha (labels das colunas)
-    x_test = x_test[1:,1:]
+    x_test = genfromtxt('./data/MotionSense_x_test.csv', delimiter=',')
+    # filtrando a primeira linha (labels das colunas)
+    x_test = x_test[1:, :]
 
-    y_train = genfromtxt('./y_train.csv', delimiter=',')
-    # filtrando a primeira coluna e a primeira linha (labels das colunas)
-    y_train = y_train[1:,1:]
+    y_train = genfromtxt('./data/MotionSense_y_train.csv', delimiter=',')
+    # filtrando a primeira linha (labels das colunas)
+    y_train = y_train[1:, :]
 
-    y_test = genfromtxt('./y_test.csv', delimiter=',')
-    # filtrando a primeira coluna e a primeira linha (labels das colunas)
-    y_test = y_test[1:,1:]
+    y_test = genfromtxt('./data/MotionSense_y_test.csv', delimiter=',')
+    # filtrando a primeira linha (labels das colunas)
+    y_test = y_test[1:, :]
 
     return (x_train, y_train,), (x_test, y_test,)
 
     """
     #Load 1/10th of the training and test data to simulate a partition.
     assert idx in range(10)
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+
     return (
         x_train[idx * 5000 : (idx + 1) * 5000],
         y_train[idx * 5000 : (idx + 1) * 5000],
