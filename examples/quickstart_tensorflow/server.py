@@ -38,29 +38,44 @@ def main() -> None:
     """
 
     strategy = fl.server.strategy.FedAvg(
-        fraction_fit=1.0,
-        fraction_eval=1.0,
-        min_fit_clients=1,
-        min_eval_clients=1,
-        min_available_clients=1,
+        fraction_fit=1,
+        fraction_eval=1,
+        min_fit_clients=2,
+        min_eval_clients=2,
+        min_available_clients=2,
         eval_fn=None,
         on_fit_config_fn=fit_config,
+        on_evaluate_config_fn=evaluate_config,
         initial_parameters=None,
     )
 
     # Start Flower server for 10 rounds of federated learning
-    fl.server.start_server("[::]:8080", config={"num_rounds": 10}, strategy=strategy)
+    fl.server.start_server("[::]:8080", config={"num_rounds": 5}, strategy=strategy)
 
 
 def fit_config(rnd: int):
     """Return training configuration dict for each round.
 
-    Keep batch size fixed at 200, perform two rounds of training with one
+    Keep batch size fixed at 1, perform two rounds of training with one
     local epoch, increase to two local epochs afterwards.
     """
     config = {
-        "batch_size": 200,
-        "local_epochs": 1 if rnd < 2 else 2,
+        "batch_size": 1,
+        # "local_epochs": 1 if rnd < 2 else 2,
+        "local_epochs": 3,
+    }
+    return config
+
+def evaluate_config(rnd: int):
+    """Return evaluation configuration dict for each round.
+    Perform five local evaluation steps on each client (i.e., use five
+    batches) during rounds one to three, then increase to ten local
+    evaluation steps.
+    """
+    config = {
+        "batch_size": 32,
+        #"eval_steps": 3 if rnd < 4 else 10,
+        "eval_steps": 10,
     }
     return config
 
