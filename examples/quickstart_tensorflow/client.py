@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Dense, Dropout
 
 import flwr as fl
 
-# Make TensorFlow logs less verbose
+# Torne os logs do TensorFlow menos detalhados
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
@@ -30,7 +30,7 @@ class HeadModel:
         return model
 
 
-# Define Flower client
+# Definir o cliente Flower
 class ModelClient(fl.client.NumPyClient):
     def __init__(self, model, x_train, y_train, x_test, y_test):
         self.model = model
@@ -40,24 +40,17 @@ class ModelClient(fl.client.NumPyClient):
     def get_parameters(self):
         return self.model.get_weights()
 
-    """
     def fit(self, parameters, config):
-        self.model.set_weights(parameters)
-        self.model.fit(self.x_train, self.y_train, epochs=1, batch_size=1)
-        return self.model.get_weights(), len(self.x_train), {}
-    """
+        """Treine parametros no conjunto de treinamento mantido localmente."""
 
-    def fit(self, parameters, config):
-        """Train parameters on the locally held training set."""
-
-        # Update local model parameters
+        # Atualiza os parametros do modelo local
         self.model.set_weights(parameters)
 
-        # Get hyperparameters for this round
+        # Hiperparametros para o round corrente
         batch_size: int = config["batch_size"]
         epochs: int = config["local_epochs"]
 
-        # Train the model using hyperparameters from config
+        # Treine o modelo usando hiperparametros da configuracao
         history = self.model.fit(
             x=self.x_train,
             y=self.y_train,
@@ -66,9 +59,10 @@ class ModelClient(fl.client.NumPyClient):
             validation_split=0.1,
         )
 
-        # Return updated model parameters and results
+        # Retornar parametros e resultados do modelo atualizados
         parameters_prime = self.model.get_weights()
         num_examples_train = int(0.9 * len(self.x_train))
+
         results = {
             "loss": history.history["loss"][0],
             "accuracy": history.history["accuracy"][0],
@@ -80,29 +74,31 @@ class ModelClient(fl.client.NumPyClient):
     def evaluate(self, parameters, config):
         self.model.set_weights(parameters)
 
-        # Get hyperparameters for this round
+        # Hiperpatrametros para o round corrente
         batch_size: int = config["batch_size"]
         steps: int = config["eval_steps"]
 
         loss, accuracy = self.model.evaluate(x=self.x_test, y=self.y_test, batch_size=batch_size, steps=steps)
-        return loss, len(self.x_test), {"accuracy": accuracy}
+        num_examples_test = len(self.x_test)
+
+        return loss, num_examples_test, {"accuracy": accuracy}
 
     def evaluate_new(self, parameters, config):
-        """Evaluate parameters on the locally held test set."""
+        """Avalie os parametros no conjunto de teste mantido localmente."""
 
-        # Update local model with global parameters
+        # Atualizar modelo local com parâmetros globais
         self.model.set_weights(parameters)
 
-        # Get config values
+        # Parametros de configuracao
         steps: int = config["val_steps"]
 
-        # Evaluate global model parameters on the local test data and return results
+        # Avalie os parametros do modelo global nos dados de teste locais e retorne os resultados
         loss, accuracy = self.model.evaluate(x=self.x_test, y=self.y_test, batch_size=1, steps=steps)
         num_examples_test = len(self.x_test)
         return loss, num_examples_test, {"accuracy": accuracy}
 
 def main() -> None:
-    # Parse command line argument `partition`
+    # Parsing do argumento `partition`, da linha de comando
     parser = argparse.ArgumentParser(description="Flower")
     parser.add_argument("--partition", type=int, choices=range(0, 10), required=True)
     args = parser.parse_args()
@@ -117,7 +113,7 @@ def main() -> None:
     model = model_obj.get_base_model()
 
     # Load local data partition
-    (x_train, y_train), (x_test, y_test) = load_partition(0)
+    (x_train, y_train), (x_test, y_test) = load_partition(args.partition)
 
     # Start Flower client
     client = ModelClient(model, x_train, y_train, x_test, y_test)
@@ -141,7 +137,7 @@ def load_partition(idx: int):
     # filtrando a primeira linha (labels das colunas)
     y_test = y_test[1:, :]
 
-    # Load 1/10th of the training and test data to simulate a partition.
+    # Carregue 1/100 dos dados de treinamento e teste para simular uma partição.
     assert idx in range(10)
 
     # Calculates number of samples per partition

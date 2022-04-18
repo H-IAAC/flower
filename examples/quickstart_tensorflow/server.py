@@ -40,9 +40,9 @@ def main() -> None:
     strategy = fl.server.strategy.FedAvg(
         fraction_fit=1,
         fraction_eval=1,
-        min_fit_clients=2,
-        min_eval_clients=2,
-        min_available_clients=2,
+        min_fit_clients=3,
+        min_eval_clients=3,
+        min_available_clients=3,
         eval_fn=None,
         on_fit_config_fn=fit_config,
         on_evaluate_config_fn=evaluate_config,
@@ -75,7 +75,7 @@ def evaluate_config(rnd: int):
     config = {
         "batch_size": 32,
         #"eval_steps": 3 if rnd < 4 else 10,
-        "eval_steps": 10,
+        "eval_steps": 3,
     }
     return config
 
