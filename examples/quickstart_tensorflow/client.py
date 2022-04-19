@@ -2,8 +2,10 @@ import argparse
 import os
 
 from numpy import genfromtxt
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
 
 import flwr as fl
 
@@ -30,7 +32,7 @@ class HeadModel:
         return model
 
 
-# Definir o cliente Flower
+# Define o cliente Flower
 class ModelClient(fl.client.NumPyClient):
     def __init__(self, model, x_train, y_train, x_test, y_test):
         self.model = model
@@ -41,7 +43,7 @@ class ModelClient(fl.client.NumPyClient):
         return self.model.get_weights()
 
     def fit(self, parameters, config):
-        """Treine parametros no conjunto de treinamento mantido localmente."""
+        """Treina parametros no conjunto de treinamento mantido localmente."""
 
         # Atualiza os parametros do modelo local
         self.model.set_weights(parameters)
@@ -50,6 +52,8 @@ class ModelClient(fl.client.NumPyClient):
         batch_size: int = config["batch_size"]
         epochs: int = config["local_epochs"]
 
+        early_stopping = EarlyStopping(min_delta=0.001, patience=10, restore_best_weights=True)
+
         # Treine o modelo usando hiperparametros da configuracao
         history = self.model.fit(
             x=self.x_train,
@@ -57,6 +61,7 @@ class ModelClient(fl.client.NumPyClient):
             batch_size=batch_size,
             epochs=epochs,
             validation_split=0.1,
+            callbacks=[early_stopping]
         )
 
         # Retornar parametros e resultados do modelo atualizados
@@ -69,6 +74,7 @@ class ModelClient(fl.client.NumPyClient):
             "val_loss": history.history["val_loss"][0],
             "val_accuracy": history.history["val_accuracy"][0],
         }
+
         return parameters_prime, num_examples_train, results
 
     def evaluate(self, parameters, config):
@@ -84,15 +90,15 @@ class ModelClient(fl.client.NumPyClient):
         return loss, num_examples_test, {"accuracy": accuracy}
 
     def evaluate_new(self, parameters, config):
-        """Avalie os parametros no conjunto de teste mantido localmente."""
+        """Avalia os parametros no conjunto de teste mantido localmente."""
 
-        # Atualizar modelo local com parâmetros globais
+        # Atualiza modelo local com parametros globais
         self.model.set_weights(parameters)
 
         # Parametros de configuracao
         steps: int = config["val_steps"]
 
-        # Avalie os parametros do modelo global nos dados de teste locais e retorne os resultados
+        # Avalia os parametros do modelo global nos dados de teste locais e retorna os resultados
         loss, accuracy = self.model.evaluate(x=self.x_test, y=self.y_test, batch_size=1, steps=steps)
         num_examples_test = len(self.x_test)
         return loss, num_examples_test, {"accuracy": accuracy}
@@ -112,10 +118,10 @@ def main() -> None:
     model_obj = HeadModel(features, ACT_LABELS)
     model = model_obj.get_base_model()
 
-    # Load local data partition
+    # Carrega a particao dos dados locais
     (x_train, y_train), (x_test, y_test) = load_partition(args.partition)
 
-    # Start Flower client
+    # Inicia o cliente Flower
     client = ModelClient(model, x_train, y_train, x_test, y_test)
     fl.client.start_numpy_client("[::]:8080", client=client)
 
@@ -137,7 +143,7 @@ def load_partition(idx: int):
     # filtrando a primeira linha (labels das colunas)
     y_test = y_test[1:, :]
 
-    # Carregue 1/100 dos dados de treinamento e teste para simular uma partição.
+    # Carregue 1/100 dos dados de treinamento e teste para simular uma particao.
     assert idx in range(10)
 
     # Calculates number of samples per partition

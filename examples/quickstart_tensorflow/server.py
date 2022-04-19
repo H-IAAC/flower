@@ -5,7 +5,9 @@ import flwr as fl
 
 def main() -> None:
     # Configure the aggregation strategy
-    """Federated Averaging strategy.
+    """Do manual do Flower.
+
+    Federated Averaging strategy.
 
     Implementation based on https://arxiv.org/abs/1602.05629
 
@@ -40,42 +42,40 @@ def main() -> None:
     strategy = fl.server.strategy.FedAvg(
         fraction_fit=1,
         fraction_eval=1,
-        min_fit_clients=3,
-        min_eval_clients=3,
-        min_available_clients=3,
+        min_fit_clients=2,
+        min_eval_clients=2,
+        min_available_clients=2,
         eval_fn=None,
         on_fit_config_fn=fit_config,
         on_evaluate_config_fn=evaluate_config,
         initial_parameters=None,
     )
 
-    # Start Flower server for 10 rounds of federated learning
+    # Executa o servidor Flower para 5 rounds de federated learning
     fl.server.start_server("[::]:8080", config={"num_rounds": 5}, strategy=strategy)
 
 
 def fit_config(rnd: int):
-    """Return training configuration dict for each round.
+    """Retorna o dict de configuracao de treinamento para cada rodada.
 
-    Keep batch size fixed at 1, perform two rounds of training with one
-    local epoch, increase to two local epochs afterwards.
-    """
+       Realiza duas rodadas de treinamento com uma época local, aumenta para três épocas locais depois."""
+
     config = {
         "batch_size": 1,
-        # "local_epochs": 1 if rnd < 2 else 2,
-        "local_epochs": 3,
+        "local_epochs": 1 if rnd < 3 else 3,
     }
     return config
 
 def evaluate_config(rnd: int):
-    """Return evaluation configuration dict for each round.
-    Perform five local evaluation steps on each client (i.e., use five
-    batches) during rounds one to three, then increase to ten local
-    evaluation steps.
+    """Retorna a configuração de teste para cada rodada.
+
+       Fixa o tamanho do batch.
+       Executa duas etapas de teste local em cada cliente (ou seja, usa dois batches) durante as rodadas de um a três,
+       depois aumenta para três etapas de avaliação.
     """
     config = {
-        "batch_size": 32,
-        #"eval_steps": 3 if rnd < 4 else 10,
-        "eval_steps": 3,
+        "batch_size": 200,
+        "eval_steps": 2 if rnd < 4 else 3,
     }
     return config
 
