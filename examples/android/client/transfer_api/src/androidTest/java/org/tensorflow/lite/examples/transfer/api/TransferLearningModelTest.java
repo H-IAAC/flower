@@ -58,8 +58,8 @@ public class TransferLearningModelTest {
             },
             Arrays.asList("1", "2", "3", "4", "5"));
 
-    model.loadParameters(FileChannel.open(tempFilePath, StandardOpenOption.READ));
-    model.saveParameters(FileChannel.open(tempFilePath, StandardOpenOption.WRITE));
+    model.loadParameters(tempFilePath);
+    model.saveParameters(tempFilePath);
 
     byte[] secondContents = Files.readAllBytes(tempFilePath);
 

@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -70,23 +71,22 @@ public final class TransferLearningModel implements Closeable {
   }
 
   private static class TrainingSample {
-    ByteBuffer bottleneck;
-    String className;
+    float[] bottleneck;
+    float[] label;
 
-    TrainingSample(ByteBuffer bottleneck, String className) {
+    TrainingSample(float[] bottleneck, float[] label) {
       this.bottleneck = bottleneck;
-      this.className = className;
+      this.label = label;
     }
   }
 
-
   private static class TestingSample {
-    ByteBuffer bottleneck;
-    String className;
+    float[] bottleneck;
+    float[] label;
 
-    TestingSample(ByteBuffer bottleneck, String className) {
+    TestingSample(float[] bottleneck, float[] label) {
       this.bottleneck = bottleneck;
-      this.className = className;
+      this.label = label;
     }
   }
 
@@ -104,16 +104,11 @@ public final class TransferLearningModel implements Closeable {
   private static final int NUM_THREADS =
       Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
-  private final int[] bottleneckShape;
-
   private final Map<String, Integer> classes;
   private final String[] classesByIdx;
+  private final Map<String, float[]> oneHotEncodedClass;
 
-  private final LiteInitializeModel initializeModel;
-  private final LiteBottleneckModel bottleneckModel;
-  private final LiteTrainHeadModel trainHeadModel;
-  private final LiteInferenceModel inferenceModel;
-  private final LiteOptimizerModel optimizerModel;
+  private LiteMultipleSignatureModel model;
 
   private final List<TrainingSample> trainingSamples = new ArrayList<>();
   private final List<TestingSample> testingSamples = new ArrayList<>();
@@ -129,17 +124,17 @@ public final class TransferLearningModel implements Closeable {
   private ByteBuffer[] nextOptimizerState;
 
   // Where to store training inputs.
-  private final ByteBuffer trainingBatchBottlenecks;
-  private final ByteBuffer trainingBatchClasses;
+  private float[][] trainingBatchBottlenecks;
+  private float[][] trainingBatchLabels;
 
   // A zero-filled buffer of the same size as `trainingBatchClasses`.
-  private final ByteBuffer zeroBatchClasses;
+  private float[][] zeroBatchClasses;
 
   // Where to store calculated gradients.
-  private final ByteBuffer[] modelGradients;
+  private float[][][] modelGradients;
 
   // Where to store bottlenecks produced during inference.
-  private ByteBuffer inferenceBottleneck;
+  private float[][] inferenceBottleneck;
 
   // Used to spawn background threads.
   private final ExecutorService executor = Executors.newFixedThreadPool(NUM_THREADS);
@@ -148,6 +143,11 @@ public final class TransferLearningModel implements Closeable {
   // It also protects the sample collection from being modified while in use by a training
   // thread.
   private final Lock trainingLock = new ReentrantLock();
+
+  // This lock guarantees that only one thread is performing training and inference at
+  // any point in time. It also protects the sample collection from being modified while
+  // in use by a training thread.
+  private final Lock trainingInferenceLock = new ReentrantLock();
 
   // This lock guards access to trainable parameters.
   private final ReadWriteLock parameterLock = new ReentrantReadWriteLock();
@@ -159,65 +159,21 @@ public final class TransferLearningModel implements Closeable {
   private volatile boolean isTerminating = false;
 
   public TransferLearningModel(ModelLoader modelLoader, Collection<String> classes) {
+    try {
+      this.model =
+          new LiteMultipleSignatureModel(
+              modelLoader.loadMappedFile("model.tflite"), classes.size());
+    } catch (IOException e) {
+      throw new RuntimeException("Couldn't read underlying model for TransferLearningModel", e);
+    }
     classesByIdx = classes.toArray(new String[0]);
     this.classes = new TreeMap<>();
+    oneHotEncodedClass = new HashMap<>();
     for (int classIdx = 0; classIdx < classes.size(); classIdx++) {
-      this.classes.put(classesByIdx[classIdx], classIdx);
+      String className = classesByIdx[classIdx];
+      this.classes.put(className, classIdx);
+      oneHotEncodedClass.put(className, oneHotEncoding(classIdx));
     }
-
-    try {
-      initializeModel = new LiteInitializeModel(modelLoader.loadInitializeModel());
-      bottleneckModel = new LiteBottleneckModel(modelLoader.loadBaseModel());
-      trainHeadModel = new LiteTrainHeadModel(modelLoader.loadTrainModel());
-      inferenceModel = new LiteInferenceModel(modelLoader.loadInferenceModel(), classes.size());
-      optimizerModel = new LiteOptimizerModel(modelLoader.loadOptimizerModel());
-    } catch (IOException e) {
-      throw new RuntimeException("Couldn't read underlying models for TransferLearningModel", e);
-    }
-
-    this.bottleneckShape = bottleneckModel.getBottleneckShape();
-    int[] modelParameterSizes = trainHeadModel.getParameterSizes();
-
-    modelParameters = new ByteBuffer[modelParameterSizes.length];
-    modelGradients = new ByteBuffer[modelParameterSizes.length];
-    nextModelParameters = new ByteBuffer[modelParameterSizes.length];
-
-    for (int parameterIndex = 0; parameterIndex < modelParameterSizes.length; parameterIndex++) {
-      int bufferSize = modelParameterSizes[parameterIndex] * FLOAT_BYTES;
-      modelParameters[parameterIndex] = allocateBuffer(bufferSize);
-      modelGradients[parameterIndex] = allocateBuffer(bufferSize);
-      nextModelParameters[parameterIndex] = allocateBuffer(bufferSize);
-    }
-    initializeModel.initializeParameters(modelParameters);
-
-    int[] optimizerStateElementSizes = optimizerModel.stateElementSizes();
-    optimizerState = new ByteBuffer[optimizerStateElementSizes.length];
-    nextOptimizerState = new ByteBuffer[optimizerStateElementSizes.length];
-
-    for (int elemIdx = 0; elemIdx < optimizerState.length; elemIdx++) {
-      int bufferSize = optimizerStateElementSizes[elemIdx] * FLOAT_BYTES;
-      optimizerState[elemIdx] = allocateBuffer(bufferSize);
-      nextOptimizerState[elemIdx] = allocateBuffer(bufferSize);
-      fillBufferWithZeros(optimizerState[elemIdx]);
-    }
-
-    trainingBatchBottlenecks =
-        allocateBuffer(getTrainBatchSize() * numBottleneckFeatures() * FLOAT_BYTES);
-
-    int batchClassesNumElements = getTrainBatchSize() * classes.size();
-    trainingBatchClasses = allocateBuffer(batchClassesNumElements * FLOAT_BYTES);
-    zeroBatchClasses = allocateBuffer(batchClassesNumElements * FLOAT_BYTES);
-    for (int idx = 0; idx < batchClassesNumElements; idx++) {
-      zeroBatchClasses.putFloat(0);
-    }
-    zeroBatchClasses.rewind();
-
-    inferenceBottleneck = allocateBuffer(numBottleneckFeatures() * FLOAT_BYTES);
-  }
-
-
-  public int[] getBottleneckShape(){
-    return this.bottleneckShape;
   }
 
   /**
@@ -229,7 +185,7 @@ public final class TransferLearningModel implements Closeable {
    * @param image image RGB data.
    * @param className ground truth label for image.
    */
-  public Future<Void> addSample(float[] image, String className, Boolean isTraining) {
+  public Future<Void> addSample(float[][][] image, String className, Boolean isTraining) {
     checkNotTerminating();
 
     if (!classes.containsKey(className)) {
@@ -237,30 +193,25 @@ public final class TransferLearningModel implements Closeable {
           "Class \"%s\" is not one of the classes recognized by the model", className));
     }
 
-    return executor.submit(() -> {
-      ByteBuffer imageBuffer = allocateBuffer(image.length * FLOAT_BYTES);
-      for (float f : image) {
-        imageBuffer.putFloat(f);
-      }
-      imageBuffer.rewind();
+    return executor.submit(
+        () -> {
+          if (Thread.interrupted()) {
+            return null;
+          }
 
-      if (Thread.interrupted()) {
-        return null;
-      }
-      ByteBuffer bottleneck = bottleneckModel.generateBottleneck(imageBuffer, null);
+          trainingInferenceLock.lockInterruptibly();
+          try {
+            float[] bottleneck = model.loadBottleneck(image);
+            if (isTraining)
+               trainingSamples.add(new TrainingSample(bottleneck, oneHotEncodedClass.get(className)));
+            else
+               testingSamples.add(new TestingSample(bottleneck, oneHotEncodedClass.get(className)));
+          } finally {
+            trainingInferenceLock.unlock();
+          }
 
-      trainingLock.lockInterruptibly();
-      try {
-        if (isTraining)
-          trainingSamples.add(new TrainingSample(bottleneck, className));
-        else
-          testingSamples.add(new TestingSample(bottleneck, className));
-      } finally {
-        trainingLock.unlock();
-      }
-
-      return null;
-    });
+          return null;
+        });
   }
 
   /**
@@ -272,61 +223,41 @@ public final class TransferLearningModel implements Closeable {
    */
   public Future<Void> train(int numEpochs, LossConsumer lossConsumer) {
     checkNotTerminating();
+    int trainBatchSize = getTrainBatchSize();
 
-    Log.e("DDFF", getTrainBatchSize() + "");
-
-    if (trainingSamples.size() < getTrainBatchSize()) {
+    if (trainingSamples.size() < trainBatchSize) {
       throw new RuntimeException(
           String.format(
               "Too few samples to start training: need %d, got %d",
-              getTrainBatchSize(), trainingSamples.size()));
+              trainBatchSize, trainingSamples.size()));
     }
+
+    trainingBatchBottlenecks = new float[trainBatchSize][numBottleneckFeatures()];
+    trainingBatchLabels = new float[trainBatchSize][this.classes.size()];
 
     return executor.submit(
         () -> {
-          trainingLock.lock();
+          trainingInferenceLock.lock();
           try {
             epochLoop:
             for (int epoch = 0; epoch < numEpochs; epoch++) {
               float totalLoss = 0;
               int numBatchesProcessed = 0;
 
-              for (List<TrainingSample> batch : trainingBatches()) {
+              for (List<TrainingSample> batch : trainingBatches(trainBatchSize)) {
                 if (Thread.interrupted()) {
                   break epochLoop;
                 }
 
-                trainingBatchClasses.put(zeroBatchClasses);
-                trainingBatchClasses.rewind();
-                zeroBatchClasses.rewind();
-
                 for (int sampleIdx = 0; sampleIdx < batch.size(); sampleIdx++) {
                   TrainingSample sample = batch.get(sampleIdx);
-                  trainingBatchBottlenecks.put(sample.bottleneck);
-                  sample.bottleneck.rewind();
-
-                  // Fill trainingBatchClasses with one-hot.
-                  int position =
-                      (sampleIdx * classes.size() + classes.get(sample.className)) * FLOAT_BYTES;
-                  trainingBatchClasses.putFloat(position, 1);
+                  trainingBatchBottlenecks[sampleIdx] = sample.bottleneck;
+                  trainingBatchLabels[sampleIdx] = sample.label;
                 }
-                trainingBatchBottlenecks.rewind();
 
-                float loss =
-                    trainHeadModel.calculateGradients(
-                        trainingBatchBottlenecks,
-                        trainingBatchClasses,
-                        modelParameters,
-                        modelGradients);
+                float loss = this.model.runTraining(trainingBatchBottlenecks, trainingBatchLabels);
                 totalLoss += loss;
                 numBatchesProcessed++;
-
-                optimizerModel.performStep(
-                    modelParameters,
-                    modelGradients,
-                    optimizerState,
-                    nextModelParameters,
-                    nextOptimizerState);
 
                 ByteBuffer[] swapBufferArray;
 
@@ -354,7 +285,7 @@ public final class TransferLearningModel implements Closeable {
 
             return null;
           } finally {
-            trainingLock.unlock();
+            trainingInferenceLock.unlock();
           }
         });
   }
@@ -379,8 +310,8 @@ public final class TransferLearningModel implements Closeable {
     int correct = 0;
     try {
       for (int sampleIdx = 0; sampleIdx < testingSamples.size(); sampleIdx++) {
-        TestingSample sample = testingSamples.get(sampleIdx);
-        confidences = inferenceModel.runInference(sample.bottleneck, modelParameters);
+        TestingSample sample = testingSamples[sampleIdx];
+        confidences = model.runInference(sample.bottleneck, modelParameters);
 
         for (int classIdx = 0; classIdx < classes.size(); classIdx++) {
           predictions[classIdx] = new Prediction(classesByIdx[classIdx], confidences[classIdx]);
@@ -393,8 +324,8 @@ public final class TransferLearningModel implements Closeable {
       parameterLock.readLock().unlock();
     }
 
-      Log.e("Accuracy", (float) correct/testingSamples.size() + "--" + loss / testingSamples.size() );
-      return Pair.create(loss/testingSamples.size(), (float) correct /testingSamples.size());
+    Log.e("Accuracy", (float) correct/testingSamples.size() + "--" + loss / testingSamples.size() );
+    return Pair.create(loss/testingSamples.size(), (float) correct /testingSamples.size());
   }
 
   private float getLLLoss(Prediction[] predictions, String gt){
@@ -408,30 +339,23 @@ public final class TransferLearningModel implements Closeable {
 
   /**
    * Runs model inference on a given image.
+   *
    * @param image image RGB data.
    * @return predictions sorted by confidence decreasing. Can be null if model is terminating.
    */
-  public Prediction[] predict(float[] image) {
+  public Prediction[] predict(float[][][] image) {
     checkNotTerminating();
-    inferenceLock.lock();
+    trainingInferenceLock.lock();
 
     try {
       if (isTerminating) {
         return null;
       }
 
-      ByteBuffer imageBuffer = allocateBuffer(image.length * FLOAT_BYTES);
-      for (float f : image) {
-        imageBuffer.putFloat(f);
-      }
-      imageBuffer.rewind();
-
-      ByteBuffer bottleneck = bottleneckModel.generateBottleneck(imageBuffer, inferenceBottleneck);
-
       float[] confidences;
       parameterLock.readLock().lock();
       try {
-        confidences = inferenceModel.runInference(bottleneck, modelParameters);
+        confidences = this.model.runInference(image);
       } finally {
         parameterLock.readLock().unlock();
       }
@@ -444,8 +368,14 @@ public final class TransferLearningModel implements Closeable {
       Arrays.sort(predictions, (a, b) -> -Float.compare(a.confidence, b.confidence));
       return predictions;
     } finally {
-      inferenceLock.unlock();
+      trainingInferenceLock.unlock();
     }
+  }
+
+  private float[] oneHotEncoding(int classIdx) {
+    float[] oneHot = new float[4];
+    oneHot[classIdx] = 1;
+    return oneHot;
   }
 
   /**
@@ -497,18 +427,22 @@ public final class TransferLearningModel implements Closeable {
 
   /** Training model expected batch size. */
   public int getTrainBatchSize() {
-    return trainHeadModel.getBatchSize();
+    return Math.min(
+        Math.max(/* at least one sample needed */ 1, trainingSamples.size()),
+        model.getExpectedBatchSize());
   }
 
   /**
    * Constructs an iterator that iterates over training sample batches.
+   *
+   * @param trainBatchSize batch size for training.
    * @return iterator over batches.
    */
-  private Iterable<List<TrainingSample>> trainingBatches() {
-    if (!trainingLock.tryLock()) {
+  private Iterable<List<TrainingSample>> trainingBatches(int trainBatchSize) {
+    if (!trainingInferenceLock.tryLock()) {
       throw new RuntimeException("Thread calling trainingBatches() must hold the training lock");
     }
-    trainingLock.unlock();
+    trainingInferenceLock.unlock();
 
     Collections.shuffle(trainingSamples);
     return () ->
@@ -523,13 +457,13 @@ public final class TransferLearningModel implements Closeable {
           @Override
           public List<TrainingSample> next() {
             int fromIndex = nextIndex;
-            int toIndex = nextIndex + getTrainBatchSize();
+            int toIndex = nextIndex + trainBatchSize;
             nextIndex = toIndex;
             if (toIndex >= trainingSamples.size()) {
               // To keep batch size consistent, last batch may include some elements from the
               // next-to-last batch.
               return trainingSamples.subList(
-                  trainingSamples.size() - getTrainBatchSize(), trainingSamples.size());
+                  trainingSamples.size() - trainBatchSize, trainingSamples.size());
             } else {
               return trainingSamples.subList(fromIndex, toIndex);
             }
@@ -537,19 +471,14 @@ public final class TransferLearningModel implements Closeable {
         };
   }
 
+  private int numBottleneckFeatures() {
+    return model.getNumBottleneckFeatures();
+  }
+
   private void checkNotTerminating() {
     if (isTerminating) {
       throw new IllegalStateException("Cannot operate on terminating model");
     }
-  }
-
-  private int numBottleneckFeatures() {
-    int result = 1;
-    for (int size : bottleneckShape) {
-      result *= size;
-    }
-
-    return result;
   }
 
   /**
@@ -564,7 +493,7 @@ public final class TransferLearningModel implements Closeable {
     executor.shutdownNow();
 
     // Make sure that all threads doing inference are finished.
-    inferenceLock.lock();
+    trainingInferenceLock.lock();
 
     try {
       boolean ok = executor.awaitTermination(5, TimeUnit.SECONDS);
@@ -572,15 +501,11 @@ public final class TransferLearningModel implements Closeable {
         throw new RuntimeException("Model thread pool failed to terminate");
       }
 
-      initializeModel.close();
-      bottleneckModel.close();
-      trainHeadModel.close();
-      inferenceModel.close();
-      optimizerModel.close();
+      this.model.close();
     } catch (InterruptedException e) {
       // no-op
     } finally {
-      inferenceLock.unlock();
+      trainingInferenceLock.unlock();
     }
   }
 
@@ -605,24 +530,6 @@ public final class TransferLearningModel implements Closeable {
       modelParameters = newParams;
     } finally {
       parameterLock.writeLock().unlock();
-    }
-  }
-
-  private static void fillBufferWithZeros(ByteBuffer buffer) {
-    int bufSize = buffer.capacity();
-    int chunkSize = Math.min(1024, bufSize);
-
-    ByteBuffer zerosChunk = allocateBuffer(chunkSize);
-    for (int idx = 0; idx < chunkSize; idx++) {
-      zerosChunk.put((byte) 0);
-    }
-    zerosChunk.rewind();
-
-    for (int chunkIdx = 0; chunkIdx < bufSize / chunkSize; chunkIdx++) {
-      buffer.put(zerosChunk);
-    }
-    for (int idx = 0; idx < bufSize % chunkSize; idx++) {
-      buffer.put((byte) 0);
     }
   }
 }

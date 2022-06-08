@@ -95,7 +95,7 @@ public class FlowerClient {
         String sampleClass = get_class(photoPath);
 
         // get rgb equivalent and class
-        float[] rgbImage = prepareImage(bitmap);
+        float[][][] rgbImage = prepareImage(bitmap);
 
         // add to the list.
         try {
@@ -116,11 +116,10 @@ public class FlowerClient {
      * Normalizes a camera image to [0; 1], cropping it
      * to size expected by the model and adjusting for camera rotation.
      */
-    private static float[] prepareImage(Bitmap bitmap)  {
+    private static float[][][] prepareImage(Bitmap bitmap)  {
         int modelImageSize = TransferLearningModelWrapper.IMAGE_SIZE;
 
-        float[] normalizedRgb = new float[modelImageSize * modelImageSize * 3];
-        int nextIdx = 0;
+        float[][][] normalizedRgb = new float[modelImageSize][modelImageSize][3];
         for (int y = 0; y < modelImageSize; y++) {
             for (int x = 0; x < modelImageSize; x++) {
                 int rgb = bitmap.getPixel(x, y);
@@ -129,9 +128,9 @@ public class FlowerClient {
                 float g = ((rgb >> 8) & LOWER_BYTE_MASK) * (1 / 255.0f);
                 float b = (rgb & LOWER_BYTE_MASK) * (1 / 255.0f);
 
-                normalizedRgb[nextIdx++] = r;
-                normalizedRgb[nextIdx++] = g;
-                normalizedRgb[nextIdx++] = b;
+                normalizedRgb[x][y][0] = r;
+                normalizedRgb[x][y][1] = g;
+                normalizedRgb[x][y][2] = b;
             }
         }
 
