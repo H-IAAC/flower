@@ -125,6 +125,21 @@ public class LiteMultipleSignatureModel implements Closeable {
     return this.interpreter.getInputTensorFromSignature("bottleneck", "train").shape()[1];
   }
 
+  int[] getBottleneckShape() {
+    return this.interpreter.getInputTensorFromSignature("bottleneck", "train").shape();
+  }
+
+  int[] getParameterSizes() {
+    int[] parameterSizes = new int[this.interpreter.getInputTensorCount() - 2];
+    for (int inputIndex = 2;
+         inputIndex < this.interpreter.getInputTensorCount();
+         inputIndex++) {
+      parameterSizes[inputIndex - 2] =
+              this.interpreter.getInputTensor(inputIndex).numElements();
+    }
+    return parameterSizes;
+  }
+
   @Override
   public void close() {
     this.interpreter.close();

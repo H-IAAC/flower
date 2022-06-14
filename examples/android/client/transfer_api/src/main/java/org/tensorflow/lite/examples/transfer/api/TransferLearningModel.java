@@ -53,16 +53,16 @@ public final class TransferLearningModel implements Closeable {
    * Prediction for a single class produced by the model.
    */
   public static class Prediction {
-    private final String className;
+    private final float[] label;
     private final float confidence;
 
-    public Prediction(String className, float confidence) {
-      this.className = className;
+    public Prediction(float[] label, float confidence) {
+      this.label = label;
       this.confidence = confidence;
     }
 
-    public String getClassName() {
-      return className;
+    public float[] getLabel() {
+      return label;
     }
 
     public float getConfidence() {
@@ -80,12 +80,13 @@ public final class TransferLearningModel implements Closeable {
     }
   }
 
+
   private static class TestingSample {
-    float[] bottleneck;
+    float[][][] image;
     float[] label;
 
-    TestingSample(float[] bottleneck, float[] label) {
-      this.bottleneck = bottleneck;
+    TestingSample(float[][][] image, float[] label) {
+      this.image = image;
       this.label = label;
     }
   }
@@ -103,6 +104,8 @@ public final class TransferLearningModel implements Closeable {
   // adding them to the bottleneck collection is blocked by an active training thread.
   private static final int NUM_THREADS =
       Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+
+  private final int[] bottleneckShape;
 
   private final Map<String, Integer> classes;
   private final String[] classesByIdx;
@@ -159,13 +162,6 @@ public final class TransferLearningModel implements Closeable {
   private volatile boolean isTerminating = false;
 
   public TransferLearningModel(ModelLoader modelLoader, Collection<String> classes) {
-    try {
-      this.model =
-          new LiteMultipleSignatureModel(
-              modelLoader.loadMappedFile("model.tflite"), classes.size());
-    } catch (IOException e) {
-      throw new RuntimeException("Couldn't read underlying model for TransferLearningModel", e);
-    }
     classesByIdx = classes.toArray(new String[0]);
     this.classes = new TreeMap<>();
     oneHotEncodedClass = new HashMap<>();
@@ -174,6 +170,21 @@ public final class TransferLearningModel implements Closeable {
       this.classes.put(className, classIdx);
       oneHotEncodedClass.put(className, oneHotEncoding(classIdx));
     }
+
+    try {
+      this.model =
+          new LiteMultipleSignatureModel(
+              modelLoader.loadMappedFile("model.tflite"), classes.size());
+    } catch (IOException e) {
+      throw new RuntimeException("Couldn't read underlying model for TransferLearningModel", e);
+    }
+
+    this.bottleneckShape = this.model.getBottleneckShape();
+  }
+
+
+  public int[] getBottleneckShape(){
+    return this.bottleneckShape;
   }
 
   /**
@@ -205,7 +216,7 @@ public final class TransferLearningModel implements Closeable {
             if (isTraining)
                trainingSamples.add(new TrainingSample(bottleneck, oneHotEncodedClass.get(className)));
             else
-               testingSamples.add(new TestingSample(bottleneck, oneHotEncodedClass.get(className)));
+               testingSamples.add(new TestingSample(image, oneHotEncodedClass.get(className)));
           } finally {
             trainingInferenceLock.unlock();
           }
@@ -310,15 +321,15 @@ public final class TransferLearningModel implements Closeable {
     int correct = 0;
     try {
       for (int sampleIdx = 0; sampleIdx < testingSamples.size(); sampleIdx++) {
-        TestingSample sample = testingSamples[sampleIdx];
-        confidences = model.runInference(sample.bottleneck, modelParameters);
+        TestingSample sample = testingSamples.get(sampleIdx);
+        confidences = this.model.runInference(sample.image);
 
         for (int classIdx = 0; classIdx < classes.size(); classIdx++) {
-          predictions[classIdx] = new Prediction(classesByIdx[classIdx], confidences[classIdx]);
+          predictions[classIdx] = new Prediction(oneHotEncoding(classIdx), confidences[classIdx]);
         }
         Arrays.sort(predictions, (a, b) -> -Float.compare(a.confidence, b.confidence));
-        if (predictions[0].className.equals(sample.className)) correct++;
-        loss += getLLLoss(predictions, sample.className);
+        if (predictions[0].getLabel() == sample.label) correct++;
+        loss += getLLLoss(predictions, sample.label);
       }
     } finally {
       parameterLock.readLock().unlock();
@@ -328,9 +339,9 @@ public final class TransferLearningModel implements Closeable {
     return Pair.create(loss/testingSamples.size(), (float) correct /testingSamples.size());
   }
 
-  private float getLLLoss(Prediction[] predictions, String gt){
+  private float getLLLoss(Prediction[] predictions, float[] gt){
     for (int i = 0; i < predictions.length; i++){
-      if (predictions[i].className.equals(gt)){
+      if (predictions[i].label == gt){
         return (float) (-1.0 * Math.log(predictions[i].confidence));
       }
     }
@@ -362,7 +373,7 @@ public final class TransferLearningModel implements Closeable {
 
       Prediction[] predictions = new Prediction[classes.size()];
       for (int classIdx = 0; classIdx < classes.size(); classIdx++) {
-        predictions[classIdx] = new Prediction(classesByIdx[classIdx], confidences[classIdx]);
+        predictions[classIdx] = new Prediction(oneHotEncoding(classIdx), confidences[classIdx]);
       }
 
       Arrays.sort(predictions, (a, b) -> -Float.compare(a.confidence, b.confidence));
