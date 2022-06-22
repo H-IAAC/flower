@@ -69,9 +69,9 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
     implementation project(path: ':transfer_api')
 
-    implementation 'org.tensorflow:tensorflow-lite:0.0.0-nightly-SNAPSHOT'
+    implementation 'org.tensorflow:tensorflow-lite:2.9.0'
     // This dependency adds the necessary TF op support.
-    implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:0.0.0-nightly-SNAPSHOT'
+    implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:2.9.0'
 
     implementation 'io.grpc:grpc-okhttp:1.27.2' // CURRENT_GRPC_VERSION
     implementation 'io.grpc:grpc-protobuf-lite:1.27.2' // CURRENT_GRPC_VERSION
