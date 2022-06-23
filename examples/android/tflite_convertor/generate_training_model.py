@@ -21,9 +21,9 @@ import os
 import numpy as np
 import tensorflow as tf
 
-IMG_SIZE = 224
-NUM_FEATURES = 7 * 7 * 1280
-NUM_CLASSES = 4
+IMG_SIZE = 32
+NUM_FEATURES = 84
+NUM_CLASSES = 10
 
 
 class TransferLearningModel(tf.Module):
@@ -47,11 +47,16 @@ class TransferLearningModel(tf.Module):
         tf.zeros((1, self.num_classes)), name='bs', trainable=True)
 
     # base model
-    self.base = tf.keras.applications.MobileNetV2(
-        input_shape=(IMG_SIZE, IMG_SIZE, 3),
-        alpha=1.0,
-        include_top=False,
-        weights='imagenet')
+    self.base = tf.keras.Sequential(
+      [
+        tf.keras.Input(shape=(32, 32, 3)),
+        tf.keras.layers.Conv2D(6, 5, activation="relu"),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Conv2D(16, 5, activation="relu"),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(units=120, activation="relu"),
+        tf.keras.layers.Dense(units=84, activation="relu"),
+      ])
     # loss function and optimizer
     self.loss_fn = tf.keras.losses.CategoricalCrossentropy()
     self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -182,10 +187,6 @@ def convert_and_save(saved_model_dir='saved_model'):
   Args:
     saved_model_dir: A directory path to save a converted model.
   """
-
-  if not os.path.isdir(saved_model_dir):
-      os.makedirs(saved_model_dir)
-
   model = TransferLearningModel()
 
   tf.saved_model.save(
@@ -209,9 +210,12 @@ def convert_and_save(saved_model_dir='saved_model'):
   converter.experimental_enable_resource_variables = True
   tflite_model = converter.convert()
 
-  model_file_path = os.path.join(saved_model_dir, "model" + ".tflite")
-  with open(model_file_path, "wb") as model_file:
+  tf.lite.experimental.Analyzer.analyze(model_content=tflite_model)
+
+  model_file_path = os.path.join('model.tflite')
+  with open(model_file_path, 'wb') as model_file:
     model_file.write(tflite_model)
 
+
 if __name__ == '__main__':
-  convert_and_save("tflite_model")
+  convert_and_save()
