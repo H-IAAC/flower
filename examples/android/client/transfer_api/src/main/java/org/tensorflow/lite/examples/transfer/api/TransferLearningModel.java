@@ -105,6 +105,9 @@ public final class TransferLearningModel implements Closeable {
   private static final int NUM_THREADS =
       Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
+  // number of classes in the dataset
+  private static final int NUM_CLASSES = 10;
+
   private final int[] bottleneckShape;
 
   private final Map<String, Integer> classes;
@@ -384,7 +387,7 @@ public final class TransferLearningModel implements Closeable {
   }
 
   private float[] oneHotEncoding(int classIdx) {
-    float[] oneHot = new float[4];
+    float[] oneHot = new float[NUM_CLASSES];
     oneHot[classIdx] = 1;
     return oneHot;
   }
