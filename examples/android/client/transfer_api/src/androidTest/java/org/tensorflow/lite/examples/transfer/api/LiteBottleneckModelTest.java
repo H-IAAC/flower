@@ -29,7 +29,7 @@ import org.junit.runner.RunWith;
 public class LiteBottleneckModelTest {
   private static final int FLOAT_BYTES = 4;
 
-  private static final int NUM_BOTTLENECK_FEATURES = 7 * 7 * 1280;
+  private static final int NUM_BOTTLENECK_FEATURES = 84; // 7 * 7 * 1280;
   private static final int IMAGE_SIZE = 224;
   private static final int NUM_IMAGE_CHANNELS = 3;
   private static final float IMAGE_FILL = 0.3f;

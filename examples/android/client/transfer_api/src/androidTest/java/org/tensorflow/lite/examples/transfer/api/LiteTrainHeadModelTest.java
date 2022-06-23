@@ -36,7 +36,7 @@ public class LiteTrainHeadModelTest {
   private static final int FLOAT_BYTES = 4;
 
   private static final int BATCH_SIZE = 20;
-  private static final int BOTTLENECK_SIZE = 7 * 7 * 1280;
+  private static final int BOTTLENECK_SIZE = 84; // 7 * 7 * 1280;
   private static final int NUM_CLASSES = 5;
 
   // Only first N elements of every parameter will be checked to save time.
