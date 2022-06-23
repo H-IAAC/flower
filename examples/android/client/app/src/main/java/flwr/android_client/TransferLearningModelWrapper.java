@@ -42,7 +42,10 @@ public class TransferLearningModelWrapper implements Closeable {
   TransferLearningModelWrapper(Context context) {
     model =
         new TransferLearningModel(
-            new ModelLoader(context, "model"), Arrays.asList("1", "2", "3", "4"));
+            new ModelLoader(context, "model"),
+                Arrays.asList("cat", "dog", "truck", "bird",
+                "airplane", "ship", "frog", "horse", "deer",
+                "automobile"));
 
     this.context = context;
   }
