@@ -57,6 +57,9 @@ class TransferLearningModel(tf.Module):
         tf.keras.layers.Dense(units=120, activation="relu"),
         tf.keras.layers.Dense(units=84, activation="relu"),
       ])
+    # summary
+    self.base.summary()
+
     # loss function and optimizer
     self.loss_fn = tf.keras.losses.CategoricalCrossentropy()
     self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
