@@ -24,7 +24,7 @@ import tensorflow as tf
 IMG_SIZE = 32
 NUM_FEATURES = 84
 NUM_CLASSES = 10
-
+base_model_path = "./base_model"
 
 class TransferLearningModel(tf.Module):
   """TF Transfer Learning model class."""
@@ -35,8 +35,22 @@ class TransferLearningModel(tf.Module):
     Args:
       learning_rate: A learning rate for the optimzer.
     """
-    self.num_features = NUM_FEATURES
     self.num_classes = NUM_CLASSES
+    self.num_features = NUM_FEATURES
+
+    #
+    # base model
+    #
+
+    #self.base = tf.saved_model.load(base_model_path)
+    self.base = tf.keras.models.load_model(base_model_path)
+    # summary
+    self.base.summary()
+    for layer in self.base.layers:
+        if layer.name == "bottleneck_layer":
+            self.num_features = layer.output_shape[1]
+            if self.num_features != NUM_FEATURES:
+                print("Error!")
 
     # trainable weights and bias for softmax
     self.ws = tf.Variable(
@@ -45,20 +59,6 @@ class TransferLearningModel(tf.Module):
         trainable=True)
     self.bs = tf.Variable(
         tf.zeros((1, self.num_classes)), name='bs', trainable=True)
-
-    # base model
-    self.base = tf.keras.Sequential(
-      [
-        tf.keras.Input(shape=(32, 32, 3)),
-        tf.keras.layers.Conv2D(6, 5, activation="relu"),
-        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-        tf.keras.layers.Conv2D(16, 5, activation="relu"),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(units=120, activation="relu"),
-        tf.keras.layers.Dense(units=84, activation="relu"),
-      ])
-    # summary
-    self.base.summary()
 
     # loss function and optimizer
     self.loss_fn = tf.keras.losses.CategoricalCrossentropy()
@@ -76,8 +76,7 @@ class TransferLearningModel(tf.Module):
     Returns:
       Map of the bottleneck.
     """
-    x = tf.keras.applications.mobilenet_v2.preprocess_input(
-        tf.multiply(feature, 255))
+    x = tf.keras.applications.mobilenet_v2.preprocess_input(feature)
     bottleneck = tf.reshape(
         self.base(x, training=False), (-1, self.num_features))
     return {'bottleneck': bottleneck}
