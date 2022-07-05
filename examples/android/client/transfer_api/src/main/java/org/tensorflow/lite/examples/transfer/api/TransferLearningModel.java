@@ -238,7 +238,7 @@ public final class TransferLearningModel implements Closeable {
     }
 
     return executor.submit(() -> {
-      ByteBuffer imageBuffer = allocateBuffer(image.length * FLOAT_BYTES);
+      ByteBuffer imageBuffer = allocateBuffer(12288);
       for (float f : image) {
         imageBuffer.putFloat(f);
       }

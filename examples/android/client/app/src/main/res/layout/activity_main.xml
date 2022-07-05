@@ -11,13 +11,33 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal">
 
-        <EditText
-            android:id="@+id/device_id_edit_text"
-            android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/textView"
+            android:layout_width="81dp"
             android:layout_height="wrap_content"
-            android:layout_weight="2"
-            android:hint="Client Partition ID (1-10)"
-            android:inputType="numberDecimal" />
+            android:layout_weight="1"
+            android:text="Exp" />
+
+        <Spinner
+            android:id="@+id/editTextNumberExpid"
+            android:layout_width="96dp"
+            android:layout_height="wrap_content"
+            android:drawSelectorOnTop="true"
+            android:entries="@array/Experiment" />
+
+        <TextView
+            android:id="@+id/textView2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="client" />
+
+        <Spinner
+            android:id="@+id/device_id_edit_text"
+            android:layout_width="96dp"
+            android:layout_height="wrap_content"
+            android:drawSelectorOnTop="true"
+            android:entries="@array/client" />
 
     </LinearLayout>
 
@@ -28,7 +48,8 @@
         android:layout_height="wrap_content"
         android:ems="10"
         android:hint="FL Server IP"
-        android:inputType="phone" />
+        android:inputType="phone"
+        android:text="192.168.15.62" />
 
 
     <EditText
@@ -37,7 +58,8 @@
         android:layout_height="wrap_content"
         android:ems="10"
         android:hint="FL Server Port"
-        android:inputType="numberDecimal" />
+        android:inputType="numberDecimal"
+        android:text="8080" />
 
 
     <Button
@@ -73,6 +95,13 @@
         android:onClick="runGRCP"
         android:text="Train Federated!" />
 
+    <Button
+        android:id="@+id/button_test_baseModel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="button_test_baseModel"
+        android:text="Test GeralModel" />
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -88,7 +117,7 @@
     <TextView
         android:id="@+id/grpc_response_text"
         android:layout_width="match_parent"
-        android:layout_height="267dp"
+        android:layout_height="174dp"
         android:background="#FAF2F2"
         android:gravity="bottom"
         android:nestedScrollingEnabled="true"

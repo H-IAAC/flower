@@ -3,12 +3,8 @@ package flwr.android_client;
 import android.app.Activity;
 import android.icu.text.SimpleDateFormat;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
-
-import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
-
 import android.os.Handler;
 import android.text.TextUtils;
 import android.text.method.ScrollingMovementMethod;
@@ -19,29 +15,30 @@ import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import flwr.android_client.ml.ModelBaseFold0;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-
-import  flwr.android_client.FlowerServiceGrpc.FlowerServiceBlockingStub;
-import  flwr.android_client.FlowerServiceGrpc.FlowerServiceStub;
+import flwr.android_client.FlowerServiceGrpc.FlowerServiceBlockingStub;
+import flwr.android_client.FlowerServiceGrpc.FlowerServiceStub;
 import com.google.protobuf.ByteString;
-
+import org.apache.commons.lang3.ArrayUtils;
+import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 import io.grpc.stub.StreamObserver;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import javax.net.ssl.HttpsURLConnection;
+
+
 
 public class MainActivity extends AppCompatActivity {
     private EditText ip;
@@ -50,10 +47,11 @@ public class MainActivity extends AppCompatActivity {
     private Button connectButton;
     private Button trainButton;
     private TextView resultText;
-    private EditText device_id;
+    private Spinner device_id;
     private ManagedChannel channel;
     public FlowerClient fc;
     private static String TAG = "Flower";
+    private Spinner experimentID;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,12 +59,13 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         resultText = (TextView) findViewById(R.id.grpc_response_text);
         resultText.setMovementMethod(new ScrollingMovementMethod());
-        device_id = (EditText) findViewById(R.id.device_id_edit_text);
+        device_id = (Spinner) findViewById(R.id.device_id_edit_text);
         ip = (EditText) findViewById(R.id.serverIP);
         port = (EditText) findViewById(R.id.serverPort);
-        loadDataButton = (Button) findViewById(R.id.load_data) ;
+        loadDataButton = (Button) findViewById(R.id.load_data);
         connectButton = (Button) findViewById(R.id.connect);
         trainButton = (Button) findViewById(R.id.trainFederated);
+        experimentID = (Spinner) findViewById(R.id.editTextNumberExpid);
 
         fc = new FlowerClient(this);
     }
@@ -87,15 +86,12 @@ public class MainActivity extends AppCompatActivity {
         resultText.append("\n" + time + "   " + text);
     }
 
-    public void loadData(View view){
-        if (TextUtils.isEmpty(device_id.getText().toString())) {
+    public void loadData(View view) {
+        if (TextUtils.isEmpty(device_id.getSelectedItem().toString())) {
             Toast.makeText(this, "Please enter a client partition ID between 1 and 10 (inclusive)", Toast.LENGTH_LONG).show();
-        }
-        else if (Integer.parseInt(device_id.getText().toString()) > 10 ||  Integer.parseInt(device_id.getText().toString()) < 1)
-        {
+        } else if (Integer.parseInt(device_id.getSelectedItem().toString()) > 10 || Integer.parseInt(device_id.getSelectedItem().toString()) < 1) {
             Toast.makeText(this, "Please enter a client partition ID between 1 and 10 (inclusive)", Toast.LENGTH_LONG).show();
-        }
-        else{
+        } else {
             hideKeyboard(this);
             setResultText("Loading the local training dataset in memory. It will take several seconds.");
             loadDataButton.setEnabled(false);
@@ -103,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    fc.loadData(Integer.parseInt(device_id.getText().toString()));
+                    fc.loadDataExtrasensory(Integer.parseInt(device_id.getSelectedItem().toString()), experimentID.getSelectedItem().toString());
                     setResultText("Training dataset is loaded in memory.");
                     connectButton.setEnabled(true);
                 }
@@ -116,8 +112,7 @@ public class MainActivity extends AppCompatActivity {
         String portStr = port.getText().toString();
         if (TextUtils.isEmpty(host) || TextUtils.isEmpty(portStr) || !Patterns.IP_ADDRESS.matcher(host).matches()) {
             Toast.makeText(this, "Please enter the correct IP and port of the FL server", Toast.LENGTH_LONG).show();
-        }
-        else {
+        } else {
             int port = TextUtils.isEmpty(portStr) ? 0 : Integer.valueOf(portStr);
             channel = ManagedChannelBuilder.forAddress(host, port).maxInboundMessageSize(10 * 1024 * 1024).usePlaintext().build();
             hideKeyboard(this);
@@ -127,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void runGRCP(View view){
+    public void runGRCP(View view) {
         new GrpcTask(new FlowerServiceRunnable(), channel, this).execute();
     }
 
@@ -174,10 +169,11 @@ public class MainActivity extends AppCompatActivity {
     private static class FlowerServiceRunnable implements GrpcRunnable {
         private Throwable failed;
         private StreamObserver<ClientMessage> requestObserver;
+
         @Override
         public void run(FlowerServiceBlockingStub blockingStub, FlowerServiceStub asyncStub, MainActivity activity)
                 throws Exception {
-             join(asyncStub, activity);
+            join(asyncStub, activity);
         }
 
         private void join(FlowerServiceStub asyncStub, MainActivity activity)
@@ -185,25 +181,25 @@ public class MainActivity extends AppCompatActivity {
 
             final CountDownLatch finishLatch = new CountDownLatch(1);
             requestObserver = asyncStub.join(
-                            new StreamObserver<ServerMessage>() {
-                                @Override
-                                public void onNext(ServerMessage msg) {
-                                    handleMessage(msg, activity);
-                                }
+                    new StreamObserver<ServerMessage>() {
+                        @Override
+                        public void onNext(ServerMessage msg) {
+                            handleMessage(msg, activity);
+                        }
 
-                                @Override
-                                public void onError(Throwable t) {
-                                    failed = t;
-                                    finishLatch.countDown();
-                                    Log.e(TAG, t.getMessage());
-                                }
+                        @Override
+                        public void onError(Throwable t) {
+                            failed = t;
+                            finishLatch.countDown();
+                            Log.e(TAG, t.getMessage());
+                        }
 
-                                @Override
-                                public void onCompleted() {
-                                    finishLatch.countDown();
-                                    Log.e(TAG, "Done");
-                                }
-                            });
+                        @Override
+                        public void onCompleted() {
+                            finishLatch.countDown();
+                            Log.e(TAG, "Done");
+                        }
+                    });
         }
 
         private void handleMessage(ServerMessage message, MainActivity activity) {
@@ -229,7 +225,7 @@ public class MainActivity extends AppCompatActivity {
                     int local_epochs = (int) epoch_config.getSint64();
 
                     // Our model has 10 layers
-                    ByteBuffer[] newWeights = new ByteBuffer[10] ;
+                    ByteBuffer[] newWeights = new ByteBuffer[10];
                     for (int i = 0; i < 10; i++) {
                         newWeights[i] = ByteBuffer.wrap(layers.get(i).toByteArray());
                     }
@@ -243,7 +239,7 @@ public class MainActivity extends AppCompatActivity {
                     List<ByteString> layers = message.getEvaluateIns().getParameters().getTensorsList();
 
                     // Our model has 10 layers
-                    ByteBuffer[] newWeights = new ByteBuffer[10] ;
+                    ByteBuffer[] newWeights = new ByteBuffer[10];
                     for (int i = 0; i < 10; i++) {
                         newWeights[i] = ByteBuffer.wrap(layers.get(i).toByteArray());
                     }
@@ -258,16 +254,15 @@ public class MainActivity extends AppCompatActivity {
                 requestObserver.onNext(c);
                 activity.setResultText("Response sent to the server");
                 c = null;
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 Log.e(TAG, e.getMessage());
             }
         }
     }
 
-    private static ClientMessage weightsAsProto(ByteBuffer[] weights){
+    private static ClientMessage weightsAsProto(ByteBuffer[] weights) {
         List<ByteString> layers = new ArrayList<ByteString>();
-        for (int i=0; i < weights.length; i++) {
+        for (int i = 0; i < weights.length; i++) {
             layers.add(ByteString.copyFrom(weights[i]));
         }
         Parameters p = Parameters.newBuilder().addAllTensors(layers).setTensorType("ND").build();
@@ -275,9 +270,9 @@ public class MainActivity extends AppCompatActivity {
         return ClientMessage.newBuilder().setParametersRes(res).build();
     }
 
-    private static ClientMessage fitResAsProto(ByteBuffer[] weights, int training_size){
+    private static ClientMessage fitResAsProto(ByteBuffer[] weights, int training_size) {
         List<ByteString> layers = new ArrayList<ByteString>();
-        for (int i=0; i < weights.length; i++) {
+        for (int i = 0; i < weights.length; i++) {
             layers.add(ByteString.copyFrom(weights[i]));
         }
         Parameters p = Parameters.newBuilder().addAllTensors(layers).setTensorType("ND").build();
@@ -285,8 +280,70 @@ public class MainActivity extends AppCompatActivity {
         return ClientMessage.newBuilder().setFitRes(res).build();
     }
 
-    private static ClientMessage evaluateResAsProto(float accuracy, int testing_size){
+    private static ClientMessage evaluateResAsProto(float accuracy, int testing_size) {
         ClientMessage.EvaluateRes res = ClientMessage.EvaluateRes.newBuilder().setLoss(accuracy).setNumExamples(testing_size).build();
         return ClientMessage.newBuilder().setEvaluateRes(res).build();
+    }
+
+
+    public void button_test_baseModel(View view)  {
+        List<String> labels=  Arrays.asList( "label:LYING_DOWN","label:SITTING","label:FIX_walking","label:FIX_running","label:BICYCLING","label:SLEEPING");
+
+
+       ExtrasensoryDataset extrasensoryDataset = new ExtrasensoryDataset(getApplicationContext(), "data/extrasensory/5EF64122-B513-46AE-BCF1-E62AAC285D2C/", true,labels);
+       List<List<Float>> inputValues = extrasensoryDataset.getAllXFloatArray();
+try {
+    ModelBaseFold0 model1 = ModelBaseFold0.newInstance(getApplicationContext());
+    // Creates inputs for reference.
+
+
+    for (List<Float> inputValue : inputValues) {
+
+        float[] floatArray = ArrayUtils.toPrimitive(inputValue.subList(1, inputValue.size()).toArray(new Float[0]), 0.0F);
+
+        classifyarray(model1,floatArray,inputValue.get(0));
+        // inputFeature0.loadBuffer(imageBuffer);
+        // ClassifyThread p = new ClassifyThread(inputValue,getApplicationContext());
+        // p.start();
+
+    }
+    model1.close();
+}
+catch (Exception e){System.err.print(e.getMessage());}
+       // Releases model resources if no longer used.
+
+
+        //
+
+        // Runs model inference and gets result.
+
+
+
+
+    }
+    public void classifyarray(ModelBaseFold0 model1, float[] inputValue, Float aFloat) {
+       new Thread(new Runnable() {
+        public void run() {
+
+                try {
+                    TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, 227}, DataType.FLOAT32);
+                    // compute primes larger than minPrime
+                    inputFeature0.loadArray(inputValue);
+
+                    ModelBaseFold0.Outputs outputs = model1.process(inputFeature0);
+                    TensorBuffer outputFeature0 = outputs.getOutputFeature0AsTensorBuffer();
+
+                    float[] data1=outputFeature0.getFloatArray();
+
+
+                     Log.d("Result ",String.valueOf(aFloat)+" "+String.valueOf( data1[0])+" "+String.valueOf(data1[1])+" "+String.valueOf( data1[2]) +" "+String.valueOf( data1[3]) +" "  +outputFeature0.getDataType().toString()+ " "+String.valueOf(inputFeature0.getFloatValue(1)));
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Log.e("Result1",e.getMessage());
+                }
+
+            }
+     }).start();
     }
 }

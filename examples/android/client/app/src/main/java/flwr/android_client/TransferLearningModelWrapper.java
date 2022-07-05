@@ -3,6 +3,7 @@ package flwr.android_client;
 import android.content.Context;
 import android.os.ConditionVariable;
 import android.os.Environment;
+import android.util.Log;
 import android.util.Pair;
 
 import java.io.Closeable;
@@ -43,23 +44,25 @@ public class TransferLearningModelWrapper implements Closeable {
         model =
                 new TransferLearningModel(
                         new AssetModelLoader(context, "model"),
-                        Arrays.asList("cat", "dog", "truck", "bird",
-                                "airplane", "ship", "frog", "horse", "deer",
-                                "automobile"));
+                        Arrays.asList("1", "2", "3", "4",
+                                "5", "6", "7", "8", "9",
+                                "10"));
         this.context = context;
     }
 
 
     public void train(int epochs){
         new Thread(() -> {
-                shouldTrain.block();
-                try {
-                    model.train(epochs, lossConsumer).get();
-                } catch (ExecutionException e) {
-                    throw new RuntimeException("Exception occurred during model training", e.getCause());
-                } catch (InterruptedException e) {
-                    // no-op
-                }
+            shouldTrain.block();
+            try {
+                model.train(epochs, lossConsumer).get();
+            } catch (ExecutionException e) {
+                throw new RuntimeException("Exception occurred during model training", e.getCause());
+            } catch (InterruptedException e) {
+                // no-op
+            }
+            Log.d("Train:" , "  "+String.valueOf(model.trainingInProgress()));
+
         }).start();
     }
 
